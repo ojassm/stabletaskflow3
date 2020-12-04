@@ -168,7 +168,7 @@ class Node {
     size_t num_dependents() const;
     size_t num_strong_dependents() const;
     size_t num_weak_dependents() const;
-    std::atomic<bool> async_cancelled {false};
+    std::atomic<bool> async_cancelled {false};  //atomic var to check if async task has been cancelled.
     const std::string& name() const;
 
   private:
