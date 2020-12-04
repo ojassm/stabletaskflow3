@@ -16,6 +16,7 @@ class Topology {
 
     template <typename P, typename C>
     Topology(Taskflow&, P&&, C&&);
+    //atomic vars to check if tpg is torn or cancelled
     std::atomic<bool> is_cancel {false};
     std::atomic<bool> is_torn {false};
   private:
