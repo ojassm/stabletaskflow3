@@ -337,7 +337,7 @@ auto Executor::async(F&& f, ArgsT&&... args) {
   _increment_topology();
 
   using R = typename function_traits<F>::return_type;
-
+  //create new tf::future object to return
   std::promise<R> p;
   tf::Future<R> fu;
   //auto fu = p.get_future();
@@ -653,7 +653,7 @@ inline void Executor::_schedule(std::vector<Node*>& nodes) {
 
 // Procedure: _invoke
 inline void Executor::_invoke(Worker& worker, Node* node) {
-
+  //function for running and scheduling tasks
   //assert(_workers.size() != 0);
 
   // Here we need to fetch the num_successors first to avoid the invalid memory
@@ -722,7 +722,7 @@ inline void Executor::_invoke(Worker& worker, Node* node) {
   // We MUST recover the dependency since the graph may have cycles.
   // This must be done before scheduling the successors, otherwise this might cause 
   // race condition on the _dependents
-  if (!node->_topology->is_cancel){  
+  if (!node->_topology->is_cancel){   //check if tpg has been cancelled or not
     if(node->_has_state(Node::BRANCHED)) {
       node->_join_counter = node->num_strong_dependents();
     }
@@ -767,7 +767,7 @@ inline void Executor::_invoke(Worker& worker, Node* node) {
   }
   
   else{
-    //std::cout<<"cancelling";
+    //tpg is cancelled. tear it down directly
     _tear_cancelled_topology(node->_topology);
   }
 }
@@ -789,7 +789,7 @@ inline void Executor::_observer_epilogue(Worker& worker, Node* node) {
 // Procedure: _invoke_static_task
   inline void Executor::_invoke_static_task(Worker& worker, Node* node) {
     _observer_prologue(worker, node);
-    if (!node->_topology->is_cancel){
+    if (!node->_topology->is_cancel){ //run task if tpg not cancelled
       std::get<Node::StaticTask>(node->_handle).work();
     }
     _observer_epilogue(worker, node);
@@ -799,7 +799,7 @@ inline void Executor::_observer_epilogue(Worker& worker, Node* node) {
 inline void Executor::_invoke_dynamic_task(Worker& w, Node* node) {
 
   _observer_prologue(w, node);
-  if (!node->_topology->is_cancel){
+  if (!node->_topology->is_cancel){   //run task if tpg not cancelled
     auto& handle = std::get<Node::DynamicTask>(node->_handle);
 
     handle.subgraph.clear();
@@ -822,7 +822,7 @@ inline void Executor::_invoke_dynamic_task_external(Node*p, Graph& g, bool detac
   auto worker = _per_thread.worker;
 
   assert(worker && worker->executor == this);
-  if (!p->_topology->is_cancel){
+  if (!p->_topology->is_cancel){   //run task if tpg not cancelled
     _invoke_dynamic_task_internal(*worker, p, g, detach);
   }
 }
@@ -910,7 +910,7 @@ inline void Executor::_invoke_condition_task(
   Worker& worker, Node* node, int& cond
 ) {
   _observer_prologue(worker, node);
-  if (!node->_topology->is_cancel){
+  if (!node->_topology->is_cancel){   //run task if tpg not cancelled
     cond = std::get<Node::ConditionTask>(node->_handle).work();
   }
   else{
@@ -922,7 +922,7 @@ inline void Executor::_invoke_condition_task(
 // Procedure: _invoke_cudaflow_task
 inline void Executor::_invoke_cudaflow_task(Worker& worker, Node* node) {
   _observer_prologue(worker, node);  
-  if (!node->_topology->is_cancel){
+  if (!node->_topology->is_cancel){   //run task if tpg not cancelled
     std::get<Node::cudaFlowTask>(node->_handle).work(*this, node);
   }
   _observer_epilogue(worker, node);
@@ -981,7 +981,7 @@ inline void Executor::_invoke_cudaflow_task(Worker& worker, Node* node) {
 inline void Executor::_invoke_module_task(Worker& w, Node* node) {
 
   _observer_prologue(w, node);
-  if (!node->_topology->is_cancel){
+  if (!node->_topology->is_cancel){   //run module task if tpg not cancelled
     auto module = std::get<Node::ModuleTask>(node->_handle).module;
   
     _invoke_dynamic_task_internal(w, node, module->_graph, false);
@@ -992,7 +992,7 @@ inline void Executor::_invoke_module_task(Worker& w, Node* node) {
 // Procedure: _invoke_async_task
 inline void Executor::_invoke_async_task(Worker& w, Node* node) {
   _observer_prologue(w, node);
-  if (!node->async_cancelled){
+  if (!node->async_cancelled){   //run task if tpg not cancelled
     std::get<Node::AsyncTask>(node->_handle).work();
   }
   _observer_epilogue(w, node);  
@@ -1127,11 +1127,11 @@ inline void Executor::_tear_down_topology(Topology* tpg) {
 }
 
 inline void Executor::_tear_cancelled_topology(Topology* tpg) {
-
+  //function for tearing down cancelled tpg.
   auto &f = tpg->_taskflow;
   if (tpg->is_torn!=true){
     f._mtx.lock();
-    //std::cout<<"TOOK LOCK";
+
     if (tpg->is_torn!=true){
         // If there is another run (interleave between lock)
       if(f._topologies.size() > 1) {
@@ -1139,7 +1139,6 @@ inline void Executor::_tear_cancelled_topology(Topology* tpg) {
         //assert(tpg->_join_counter == 0);
 
         // Set the promise
-        //std::cout<<"SET!";
         tpg->_promise.set_value();
         //
         tpg->is_torn=true;
@@ -1170,16 +1169,13 @@ inline void Executor::_tear_cancelled_topology(Topology* tpg) {
         f._mtx.unlock();
 
         // We set the promise in the end in case taskflow leaves before taskflow
-        //std::cout<<"SET!";
         p.set_value();
         
         _decrement_topology_and_notify();
-        //std::cout<<"SET!";
       }
     }
     else {
-    f._mtx.unlock();
-      //std::cout<<"Gave LOCK";
+      f._mtx.unlock();
     }
   }
 }
@@ -1196,9 +1192,13 @@ tf::Future<void> Executor::run_until(Taskflow& f, P&& pred, C&& c) {
   if(f.empty() || pred()) {
     std::promise<void> promise;
     promise.set_value();
+    //tf::future object to return
     tf::Future<void> future;
+    //create tpg
     Topology temp( f, pred, c);
+    //set future object
     future.future_obj=promise.get_future();
+    //set tpg of tf::fututre object
     future.set_tpg(&temp);
     _decrement_topology_and_notify();
     
